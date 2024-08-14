@@ -17,11 +17,12 @@ llm = ChatGroq(
 chatagent = ChatbotAgents.query_processor(llm)
 
 # setup tasks
-query_task = ChatbotTasks.search_query(chatagent)
+query_task = ChatbotTasks.process_query(chatagent)
 
 # setup inputs
+temp = input("Enter the query.\n")
 input = {
-    "query" : "Tell me about tensorflow"
+    "query" : temp
 }
 
 crew = Crew(
