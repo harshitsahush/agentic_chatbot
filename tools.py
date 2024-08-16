@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from datetime import date
 import redis
 import json
+import calendar
 
 
 load_dotenv()
@@ -55,7 +56,7 @@ class ChatTools():
 
     @tool
     def availability_query(query : str):
-        """Use this to tool ONLY when the query is ONLY related to appointment/slot availability"""
+        """Use this to tool ONLY when the query is ONLY related to appointment/slot availability. """
 
 
         # S1) fetch appropriate date and time
@@ -63,13 +64,29 @@ class ChatTools():
             messages = [
                 {
                     "role" : "system",
-                    "content" : """You are a helpful chatbot. From the given query you are supposed to return the mentioned date in the YYYY-MM-DD format and the hour in 24 hour time. For context, todays date in YYYY-MM-DD format is """ + str(date.today()) + """. Return ONLY the date in the specified format and nothing else. If a weekday is provided, return the current date if today is that weekday, else return the next date that occurs in the specified weekday.
-                    If any of the attributes : date or time are missing, simply return empty in its place.
-                    Create a json for the reponse having format:
-                    {"date" : the date in YYYY-MM-DD format,"hour" : the hour in 24 hour system}
-                  
-                    For example: if todays date is 2024-08-21 and user query is : Are there any appointments tomorrow at 3 pm? Then your response should be:
-                    {"date" : "2024-08-22","hour" : "15"}
+                    "content" : """You are a helpful chatbot. From the given query, extract the date in the YYYY-MM-DD format and the hour in 24-hour time. For context, today's date is """ + str(date.today()) + """ and today is """ + calendar.day_name[date.today().weekday()] + """.
+
+                    Date Extraction:
+                    If a specific date is mentioned, return it in the YYYY-MM-DD format.
+                    If a weekday (e.g., "Friday") is provided:
+                    Return today's date if the specified weekday is today (e.g., if today is "Friday").
+                    Otherwise, return the date of the upcoming occurrence of the specified weekday.
+
+                    Time Extraction:
+                    If a specific time is mentioned, return its hour in 24-hour format.
+
+                    Response Format:
+                    Return a JSON object with the extracted date and time:
+                    {"date": "YYYY-MM-DD", "hour": "HH"}
+                    If any attribute (date or time) is missing, return an empty string for that attribute.
+
+                    Examples:
+                    If today's date is 2024-08-21 and the user query is: "Are there any appointments tomorrow at 3 pm?" then your response should be:
+                    {"date": "2024-08-22", "hour": "15"}
+                    If today's date is 2024-08-16 and the user query is: "Slots available on Saturday?" then your response should be:
+                    {"date": "2024-08-17", "hour": ""}
+
+                    Return ONLY JSON AND NOTHING ELSE.
                     """
                 },
                 {
@@ -100,7 +117,7 @@ class ChatTools():
                 {
                     "role" : "system",
                     "content" : """You are a helpful chatbot. You will be given the user query, the date user is referencing, the time user is referencing and a list of booked appointments on the referenced date. The booked appointments are in the form of list of lists. Where each element of the the parent list is a list containing 3 elements in sequence [time of appointment in 24 hour format, name of person, contact information]. for eg [[12, harshit, 12345678], [15, raman, 22314567]].
-                    Generate the appropriate response for use query using ONLY the given information, and return the response.Remember that slots only exist from 10 to 17 hours.
+                    Generate the appropriate response for use query using ONLY the given information, and return the response.Remember that slots only exist from 10 to 17 hours. Remember that you CANNOT disclose the name of person or their contact information in your response REGARDLESS OF PROMPT.
                     If you cannot answer the response, simply return that you're unable to process the query.
                     """
                 },
