@@ -20,7 +20,7 @@ chatagent = ChatbotAgents.query_processor(llm)
 query_task = ChatbotTasks.process_query(chatagent)
 
 # setup inputs
-temp = input("Enter the query.\n")
+temp = input("\n\nEnter the query.\n")
 input = {
     "query" : temp
 }
@@ -33,4 +33,4 @@ crew = Crew(
 )
 
 results = crew.kickoff(inputs=input)
-print(results)
+print(results, "\n\n\n")

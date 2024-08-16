@@ -13,10 +13,6 @@ import json
 
 load_dotenv()
 
-tavily_search = TavilySearchResults()
-# pdf_search_tool = PDFSearchTool(pdf = "Harshit ML Resume.pdf")
-## Not using because used OpenAI by default
-
 db = FAISS.load_local("hs_resume", HuggingFaceEmbeddings(), allow_dangerous_deserialization=True)
 db_retriever = db.as_retriever(search_kwargs={"k": 5})
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -24,6 +20,9 @@ redis_client = redis.Redis(host='localhost', port=6379, db=2)
 
 
 
+#------------------TOOLS--------------
+
+tavily_search = TavilySearchResults()
 
 class ChatTools():  
     @tool
@@ -55,8 +54,8 @@ class ChatTools():
     
 
     @tool
-    def db_query(query : str):
-        """Use this to process query when the query is related to appointment availability, appointment reservation"""
+    def availability_query(query : str):
+        """Use this to tool ONLY when the query is ONLY related to appointment/slot availability"""
 
 
         # S1) fetch appropriate date and time
@@ -116,3 +115,83 @@ class ChatTools():
 
         data = chat_completion.choices[0].message.content
         return data
+
+
+    @tool
+    def book_slot(query : str):
+        """Use this tool only to book/reserve appointments/slots"""
+
+        #S1) Extract dates and time from query
+        #S2) Fetch booked slots for todays date
+        #S3) Check if required slot is available --- return yes/no
+        #S4) If yes, call function to book slot
+
+        #S1) Extract dates and time from query
+        chat_completion = client.chat.completions.create(
+            messages = [
+                {
+                    "role" : "system",
+                    "content" : """You are a helpful chatbot. From the given query you are supposed to return the mentioned date in the YYYY-MM-DD format and the hour in 24 hour time. For context, todays date in YYYY-MM-DD format is """ + str(date.today()) + """. Return ONLY the date in the specified format and nothing else. If a weekday is provided, return the current date if today is that weekday, else return the next date that occurs in the specified weekday.
+                    If any of the attributes : date or time are missing, simply return empty in its place.
+                    Create a json for the reponse having format:
+                    {"date" : the date in YYYY-MM-DD format,"hour" : the hour in 24 hour system}
+                  
+                    For example: if todays date is 2024-08-21 and user query is : Are there any appointments tomorrow at 3 pm? Then your response should be:
+                    {"date" : "2024-08-22","hour" : "15"}
+                    """
+                },
+                {
+                    "role" : "user",
+                    "content" : f"""User Query : {query}"""
+                }
+            ],
+            model = "llama3-70b-8192",
+            temperature=0.1,
+        )
+        data = chat_completion.choices[0].message.content
+        data = json.loads(data)
+        ref_date = data["date"]
+        ref_time = data["hour"]
+    
+
+        #S2) Fetch booked slots for todays date
+        #     redis will store in the form {"date" : [["hour_time", "shyam"]]}
+        if(redis_client.exists(ref_date)):
+            booked_slots = json.loads(redis_client.get(ref_date))
+        else:
+            booked_slots = []
+
+
+        #S3) Check if required slot is available --- return yes/no
+        chat_completion = client.chat.completions.create(
+            messages = [
+                {
+                    "role" : "system",
+                    "content" : """You are a helpful chatbot, who only replies in YES/NO. You will be given the user query, the date user is referencing, the time user is referencing and a list of booked appointments on the referenced date. The booked appointments are in the form of list of lists. Where each element of the the parent list is a list containing 3 elements in sequence [time of appointment in 24 hour format, name of person, contact information]. for eg [[12, harshit, 12345678], [15, raman, 22314567]].
+                    If slot is available on the user's time, reply with YES, else NO.Remember that slots only exist from 10 to 17 hours.
+                    If you cannot answer the response, simply return that you're unable to process the query.
+                    """
+                },
+                {
+                    "role" : "user",
+                    "content" : f"""User Query : {query}. Referenced date : {ref_date}. Referenced time : {ref_time}. Booked appointments : {json.dumps(booked_slots)}"""
+                }
+            ],
+            model = "llama3-70b-8192",
+            temperature=0.1,
+        )
+
+        data = chat_completion.choices[0].message.content
+
+        #S4) If yes, call function to book slot
+        if(data == "YES"):
+            booked_slots.append([ref_time, "user_name", "User_contact"])
+            t = redis_client.set(ref_date, json.dumps(booked_slots))
+            
+            if(t == True):
+                return "Slot has been successfully booked"
+            else:
+                return "Slot booking unsuccessful"
+    
+        #S5) If no, that means slot not available
+        return "Slot not available"
